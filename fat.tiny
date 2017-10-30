@@ -1,0 +1,8 @@
+var x: int, a: real;
+read x;
+a := 1;
+repeat
+  a := a * (x + (100 / 20));
+  x := x - 1
+until x = 0;
+write a
