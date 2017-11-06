@@ -3,7 +3,7 @@ procedure par()
     n := n - 1;
     impar()
   else
-    res := 1
+    res := true
   end
 end;
 
@@ -12,11 +12,13 @@ procedure impar()
     n := n - 1;
     par()
   else
-    res := 0
+    res := false
   end
 end;
 
-var x, n, res;
+var x: int, n: int, res, true, false: bool;
+true := 0 = 0;
+false := 0 = 1;
 read x;
 n := x;
 par();

@@ -16,7 +16,7 @@ fun <T> duplicadas(l: List<T>): Set<T> {
 }
 
 data class Tiny(val procs: List<Proc>, val corpo: Bloco) {
-    fun escopo(): List<String> {
+    fun escopo(): MutableList<String> {
         val erros = mutableListOf<String>()
         // Primeira passada
         val dvars = duplicadas(corpo.vars)
@@ -36,6 +36,15 @@ data class Tiny(val procs: List<Proc>, val corpo: Bloco) {
             escopo(proc.corpo, procs, vars, erros)
         for(cmd in corpo.cmds)
             escopo(cmd, procs, vars, erros)
+        return erros
+    }
+
+    fun tipos(erros: MutableList<String>): List<String> {
+        val procs =
+                (procs.map { p -> Pair(p.nome, p) }).toMap()
+        val vars = tipo(corpo, procs, emptyMap(), erros)
+        for(proc in this.procs)
+            tipo(proc.corpo, procs, vars, erros)
         return erros
     }
 }
@@ -242,6 +251,43 @@ fun tipo(no: Any, procs: Map<String, Proc>,
         }
         is Num -> no.tipo = "int"
         is Var -> no.tipo = vars.get(no.nome)
+        is If -> {
+            tipo(no.cond, procs, vars, erros)
+            if(no.cond.tipo != "bool")
+                erros.add("condição do if na linha ${no.lin} não é booleana mas ${no.cond.tipo}")
+            tipo(no.th, procs, vars, erros)
+            tipo(no.els, procs, vars, erros)
+        }
+        is Bloco -> {
+            val tabbloco =
+                    vars.plus(no.vars.map{d -> Pair(d.nome, d.tipo)})
+            for(cmd in no.cmds) {
+                tipo(cmd, procs, tabbloco, erros)
+            }
+            return tabbloco
+        }
+        is Repeat -> {
+            val tabcorpo = tipo(no.corpo, procs, vars, erros)
+            tipo(no.cond, procs, tabcorpo, erros)
+            if(no.cond.tipo != "bool")
+                erros.add("condição do repeat na linha ${no.lin} não é booleana mas ${no.cond.tipo}")
+        }
+        is Write -> tipo(no.exp, procs, vars, erros)
+        is Read -> {
+            val tvar = vars.get(no.lval)
+            if(tvar != "int" && tvar != "real")
+                erros.add("variável ${no.lval} no read da linha ${no.lin} não é numérica mas ${tvar}")
+        }
+        is Chamada -> {}
+        is Atrib -> {
+            val tlval = vars.get(no.lval)
+            tipo(no.rval, procs, vars, erros)
+            val trval = no.rval.tipo!!
+            if(tlval != trval &&
+                    (tlval != "real" || trval != "int")) {
+                erros.add("tipos incompatíveis na atribuição da linha ${no.lin}, lado esquerdo é $tlval e lado direito é $trval")
+            }
+        }
     }
     return vars
 }

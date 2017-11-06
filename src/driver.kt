@@ -7,7 +7,7 @@ object Driver {
         val parser = TINYParser(TINYScanner(FileReader(File(fname))))
         parser.parse()
         println(parser.out)
-        println(parser.out.escopo())
+        println(parser.out.tipos(parser.out.escopo()))
     }
 
     @Test
