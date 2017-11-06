@@ -1,0 +1,29 @@
+procedure par(n: int): bool
+  if 0 < n then
+    par := impar(n-1)
+  else
+    par := true
+  end
+end;
+
+procedure impar(n: int): bool
+  if 0 < n then
+    impar := par(n-1)
+  else
+    impar := false
+  end
+end;
+
+procedure writebb(a, b: bool)
+  write a;
+  write b
+end;
+
+var x: int, true, false: bool;
+true := 0 = 0;
+false := 0 = 1;
+read x;
+par(x);
+writebb(par(x), impar(x));
+par(writebb(true, false))
+

@@ -1,0 +1,15 @@
+class A <: B
+  var x: int;
+  procedure foo(): int
+    foo := y
+  end;
+  procedure foo(): int
+    foo := y
+  end
+end;
+
+class B
+  var x, y: int
+end;
+
+write new C()

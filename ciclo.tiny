@@ -1,0 +1,9 @@
+class A <: B
+  var x: int
+end;
+
+class B <: A
+  var y: int
+end;
+
+write 0
