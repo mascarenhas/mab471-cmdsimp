@@ -1,13 +1,11 @@
 class A <: B
   var x: int;
   procedure foo(): int
-    foo := y
-  end;
-  procedure foo(): int
+    y := 0 = 0;
     foo := y
   end;
   procedure baz(): int
-    baz := bar()
+    baz := bar(0)
   end
 end;
 
@@ -18,4 +16,10 @@ class B
   end
 end;
 
+var a: A;
+a := new A(0, 0=0);
+a.foo();
+a.foo(20);
+(20).foo();
+a.FOO();
 write new C()

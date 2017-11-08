@@ -1,15 +1,31 @@
-class A <: B
-  var x: int;
-  procedure foo(a: int): int
-    foo := y
-  end
-end;
-
 class B <: C
   var y: int;
-  procedure foo(): int
-    foo := y
+  procedure foo(a: E): D
+    a.m();
+    foo := new D(0)
   end
 end;
 
+class A <: B
+  var x: int;
+  procedure foo(a: D): E
+    foo := new E(0, 2)
+  end
+end;
+
+class D
+  var x: real
+end;
+
+class E <: D
+  var y: real;
+  procedure m(): int
+    m := 5
+  end
+end;
+
+var a: A, b: B, d: D, e: E;
+e := a.foo(d);
+b := a;
+d := b.foo(e);
 write 0

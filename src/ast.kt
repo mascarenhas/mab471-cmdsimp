@@ -55,11 +55,15 @@ data class Tiny(val classes: List<Classe>,
     fun tipos(erros: MutableList<String>): List<String> {
         val procs =
                 (procs.map { p -> Pair(p.nome, p) }).toMap()
-        val vars = tipo(corpo, procs, emptyMap(), erros)
+        val classes = classes.map{ cls -> Pair(cls.nome, cls) }.toMap()
+        val vars = tipo(corpo, classes, procs, emptyMap(), erros)
         for(proc in this.procs) {
             val pvars = vars.plus(
                     proc.params.map{ d -> Pair(d.nome, d.tipo) }).plus(Pair(proc.nome, proc.tret))
-            tipo(proc.corpo, procs, pvars, erros)
+            tipo(proc.corpo, classes, procs, pvars, erros)
+        }
+        for(classe in this.classes) {
+            tipo(classe, classes, procs, vars, erros)
         }
         return erros
     }
@@ -69,6 +73,8 @@ data class Classe(val nome: String, var sup: String?,
                   val campos: List<Decl>, val metodos: List<Proc>,
                   val lin: Int) {
     var tabmetodos: Map<String, Proc>? = null
+    var todosmetodos: List<Proc>? = null
+    var todoscampos: List<Decl>? = null
 }
 
 
@@ -173,6 +179,51 @@ fun campos(cls: Classe, classes: Map<String, Classe>): List<Decl> {
         else return cls.campos;
     } else return cls.campos;
 }
+
+fun metodos(cls: Classe, classes: Map<String, Classe>, erros: MutableList<String>): List<Proc> {
+    if(cls.todosmetodos != null) return cls.todosmetodos!!
+    val sup = cls.sup
+    val dmetodos = duplicadas(cls.metodos.map { p -> p.nome })
+    for(metodo in dmetodos) {
+        erros.add("método $metodo declarado mais de uma vez na classe ${cls.nome}")
+    }
+    if(sup != null && classes.containsKey(sup)) {
+        val smetodos = metodos(classes[sup]!!, classes, erros)
+        val tabsmetodos = smetodos.map{ m -> Pair(m.nome, m) }.toMap()
+        for(metodo in cls.metodos) {
+            if(tabsmetodos.containsKey(metodo.nome)) {
+                // redefinição
+                val smetodo = tabsmetodos[metodo.nome]!!
+                if(!subtipo(metodo.tret, smetodo.tret, classes)) {
+                    erros.add("tipo de retorno não bate na redefinição do método ${metodo.nome} na classe ${cls.nome}")
+                }
+                if(smetodo.params.size != metodo.params.size) {
+                    erros.add("número de parâmetros não bate na redefinição do método ${metodo.nome} na classe ${cls.nome}")
+                } else {
+                    for(i in 0..(smetodo.params.size-1)) {
+                        if(!subtipo(smetodo.params[i].tipo, metodo.params[i].tipo, classes)) {
+                            erros.add("tipo do $i-ésimo parâmetro não bate na redefinição do método ${metodo.nome} na classe ${cls.nome}")
+                        }
+                    }
+                }
+            }
+        }
+        val tabmetodos = cls.metodos.map{ m -> Pair(m.nome, m) }.toMap()
+        val smetodosredef = smetodos.map{ m ->
+            if(tabmetodos.containsKey(m.nome))
+                tabmetodos[m.nome]!!
+            else
+                m
+        }
+        cls.todosmetodos = smetodosredef + cls.metodos.filterNot{
+            m -> tabsmetodos.containsKey(m.nome)
+        }
+    } else {
+        cls.todosmetodos = cls.metodos.toSet().toList()
+    }
+    return cls.todosmetodos!!
+}
+
 
 fun escopo(no: Any, classes: Map<String, Classe>,
            procs: Map<String, Proc>, vars: Map<String, Bloco>, erros: MutableList<String>): Map<String, Bloco> {
@@ -279,32 +330,29 @@ fun escopo(no: Any, classes: Map<String, Classe>,
                 }
             }
             val campos = campos(no, classes)
+            no.todoscampos = campos.toSet().toList()
             val dcampos = duplicadas(campos.map { c -> c.nome })
             for(campo in dcampos) {
                 erros.add("campo $campo redeclarado na classe ${no.nome}")
             }
-            val dmetodos = duplicadas(no.metodos.map { p -> p.nome })
-            for(metodo in dmetodos) {
-                erros.add("método $metodo declarado mais de uma vez na classe ${no.nome}")
-            }
             val cbloco = Bloco(campos, ArrayList<Cmd>(), no.lin)
             no.tabmetodos =
-                    (no.metodos.map { p -> Pair(p.nome, p) }).toMap()
+                    (metodos(no, classes, erros).map { p -> Pair(p.nome, p) }).toMap()
             for(metodo in no.tabmetodos!!.values) {
                 val pvars = vars.plus(
                         campos.map{ c -> Pair(c.nome, cbloco) }).plus(metodo.params.map{d -> Pair(d.nome, metodo.corpo)}).plus(Pair(metodo.nome, metodo.corpo))
-                escopo(metodo.corpo, classes, procs, pvars, erros)
+                escopo(metodo.corpo, classes, procs + no.tabmetodos!!, pvars, erros)
             }
         }
     }
     return vars
 }
 
-fun arith(e1: Exp, e2: Exp, procs: Map<String, Proc>,
+fun arith(e1: Exp, e2: Exp, classes: Map<String, Classe>, procs: Map<String, Proc>,
           vars: Map<String, String>, erros: MutableList<String>, lin: Int):
         String {
-    tipo(e1, procs, vars, erros)
-    tipo(e2, procs, vars, erros)
+    tipo(e1, classes, procs, vars, erros)
+    tipo(e2, classes, procs, vars, erros)
     if (e1.tipo == "int" && e2.tipo == "int") {
         return "int"
     } else if (e1.tipo == "int" && e2.tipo == "real") {
@@ -322,17 +370,17 @@ fun arith(e1: Exp, e2: Exp, procs: Map<String, Proc>,
     }
 }
 
-fun tipo(no: Any, procs: Map<String, Proc>,
-           vars: Map<String, String>, erros: MutableList<String>):
+fun tipo(no: Any, classes: Map<String, Classe>,
+         procs: Map<String, Proc>, vars: Map<String, String>, erros: MutableList<String>):
         Map<String, String> {
     when (no) {
-        is Soma -> no.tipo = arith(no.e1, no.e2, procs, vars, erros, no.lin)
-        is Sub -> no.tipo = arith(no.e1, no.e2, procs, vars, erros, no.lin)
-        is Mult -> no.tipo = arith(no.e1, no.e2, procs, vars, erros, no.lin)
-        is Div -> no.tipo =  arith(no.e1, no.e2, procs, vars, erros, no.lin)
+        is Soma -> no.tipo = arith(no.e1, no.e2, classes, procs, vars, erros, no.lin)
+        is Sub -> no.tipo = arith(no.e1, no.e2, classes, procs, vars, erros, no.lin)
+        is Mult -> no.tipo = arith(no.e1, no.e2, classes, procs, vars, erros, no.lin)
+        is Div -> no.tipo =  arith(no.e1, no.e2, classes, procs, vars, erros, no.lin)
         is Menor -> {
-            tipo(no.e1, procs, vars, erros)
-            tipo(no.e2, procs, vars, erros)
+            tipo(no.e1, classes, procs, vars, erros)
+            tipo(no.e2, classes, procs, vars, erros)
             if(no.e1.tipo != "int" && no.e1.tipo != "real")
                 erros.add("lado esquerdo de comparação não é número mas ${no.e1.tipo} na linha ${no.lin}")
             if(no.e2.tipo != "int" && no.e2.tipo != "real")
@@ -340,8 +388,8 @@ fun tipo(no: Any, procs: Map<String, Proc>,
             no.tipo = "bool"
         }
         is Igual -> {
-            tipo(no.e1, procs, vars, erros)
-            tipo(no.e2, procs, vars, erros)
+            tipo(no.e1, classes, procs, vars, erros)
+            tipo(no.e2, classes, procs, vars, erros)
             val te1: String = no.e1.tipo!!
             val te2: String = no.e2.tipo!!
             if(te1 != te2 &&
@@ -354,27 +402,27 @@ fun tipo(no: Any, procs: Map<String, Proc>,
         is Num -> no.tipo = "int"
         is Var -> no.tipo = vars.get(no.nome)
         is If -> {
-            tipo(no.cond, procs, vars, erros)
+            tipo(no.cond, classes, procs, vars, erros)
             if(no.cond.tipo != "bool")
                 erros.add("condição do if na linha ${no.lin} não é booleana mas ${no.cond.tipo}")
-            tipo(no.th, procs, vars, erros)
-            tipo(no.els, procs, vars, erros)
+            tipo(no.th, classes, procs, vars, erros)
+            tipo(no.els, classes, procs, vars, erros)
         }
         is Bloco -> {
             val tabbloco =
                     vars.plus(no.vars.map{d -> Pair(d.nome, d.tipo)})
             for(cmd in no.cmds) {
-                tipo(cmd, procs, tabbloco, erros)
+                tipo(cmd, classes, procs, tabbloco, erros)
             }
             return tabbloco
         }
         is Repeat -> {
-            val tabcorpo = tipo(no.corpo, procs, vars, erros)
-            tipo(no.cond, procs, tabcorpo, erros)
+            val tabcorpo = tipo(no.corpo, classes, procs, vars, erros)
+            tipo(no.cond, classes, procs, tabcorpo, erros)
             if(no.cond.tipo != "bool")
                 erros.add("condição do repeat na linha ${no.lin} não é booleana mas ${no.cond.tipo}")
         }
-        is Write -> tipo(no.exp, procs, vars, erros)
+        is Write -> tipo(no.exp, classes, procs, vars, erros)
         is Read -> {
             val tvar = vars.get(no.lval)
             if(tvar != "int" && tvar != "real")
@@ -383,13 +431,13 @@ fun tipo(no: Any, procs: Map<String, Proc>,
         is Chamada -> {
             val proc = procs.getValue(no.nome)
             no.args.forEach {
-                arg -> tipo(arg, procs, vars, erros)
+                arg -> tipo(arg, classes, procs, vars, erros)
             }
             val targs = no.args.map{ arg -> arg.tipo }
             if(targs.size != proc.params.size)
                 erros.add("número de parâmetros na chamada da linha ${no.lin} não bate com número de argumentos")
             (0..(Math.min(targs.size, proc.params.size)-1)).forEach{
-                i -> if(targs[i] != proc.params[i].tipo &&
+                i -> if(!subtipo(targs[i]!!, proc.params[i].tipo, classes) &&
                         (proc.params[i].tipo != "real" ||
                                 targs[i] != "int"))
                     erros.add("tipos incompatíveis no ${i}-ésimo argumento da chamada de procedimento da linha ${no.lin}, parâmetro é ${proc.params[i].tipo} e argumento é ${targs[i]}")
@@ -397,12 +445,67 @@ fun tipo(no: Any, procs: Map<String, Proc>,
             no.tipo = proc.tret
         }
         is Atrib -> {
-            val tlval = vars.get(no.lval)
-            tipo(no.rval, procs, vars, erros)
+            val tlval = vars.get(no.lval)!!
+            tipo(no.rval, classes, procs, vars, erros)
             val trval = no.rval.tipo!!
-            if(tlval != trval &&
+            if(!subtipo(trval, tlval, classes) &&
                     (tlval != "real" || trval != "int")) {
                 erros.add("tipos incompatíveis na atribuição da linha ${no.lin}, lado esquerdo é $tlval e lado direito é $trval")
+            }
+        }
+        is ChamadaMetodo -> {
+            tipo(no.rec, classes, procs, vars, erros)
+            no.tipo = "int"
+            for (arg in no.args)
+                tipo(arg, classes, procs, vars, erros)
+            if(no.rec.tipo in setOf("int", "real", "bool")) {
+                erros.add("receiver da chamada do método ${no.nome} na linha ${no.lin} tem tipo primitivo ${no.rec.tipo}")
+            } else {
+                val cls = classes[no.rec.tipo]
+                if (cls != null) {
+                    val metodo =
+                            cls.todosmetodos?.find{ m -> m.nome == no.nome }
+                    if(metodo != null) {
+                        val targs = no.args.map{ arg -> arg.tipo }
+                        if(targs.size != metodo.params.size)
+                            erros.add("número de parâmetros na chamada da linha ${no.lin} não bate com número de argumentos")
+                        (0..(Math.min(targs.size, metodo.params.size)-1)).forEach{
+                            i -> if(!subtipo(targs[i]!!, metodo.params[i].tipo, classes) &&
+                                (metodo.params[i].tipo != "real" ||
+                                        targs[i] != "int"))
+                            erros.add("tipos incompatíveis no ${i}-ésimo argumento da chamada de método da linha ${no.lin}, parâmetro é ${metodo.params[i].tipo} e argumento é ${targs[i]}")
+                        }
+                        no.tipo = metodo.tret
+                    } else {
+                        erros.add("método não existe na classe ${no.rec.tipo} na chamada do método ${no.nome} na linha ${no.lin}")
+                    }
+                }
+            }
+        }
+        is Cons -> {
+            val cls = classes[no.cls]
+            if(cls != null) {
+                if(no.args.size != cls.todoscampos!!.size) {
+                    erros.add("número de argumentos não bate com número de campos na instanciação da classe ${no.cls} na linha ${no.lin}")
+                } else {
+                    for (i in 1..(no.args.size - 1)) {
+                        val arg = no.args[i]
+                        val campo = cls.todoscampos!![i]
+                        tipo(arg, classes, procs, vars, erros)
+                        if (arg.tipo != campo.tipo &&
+                                (arg.tipo != "int" || campo.tipo != "real")) {
+                            erros.add("tipo ${arg.tipo} do $i-ésimo argumento para o construtor incompatível com tipo ${campo.tipo} do campo ${campo.nome} da classe ${no.cls}")
+                        }
+                    }
+                }
+                no.tipo = no.cls
+            }
+        }
+        is Classe -> {
+            for(metodo in no.todosmetodos!!) {
+                val pvars = vars.plus(
+                        no.todoscampos!!.map{ c -> Pair(c.nome, c.tipo) }).plus(metodo.params.map{d -> Pair(d.nome, d.tipo)}).plus(Pair(metodo.nome, metodo.tret))
+                tipo(metodo.corpo, classes, procs + no.tabmetodos!!, pvars, erros)
             }
         }
     }

@@ -29,4 +29,9 @@ object Driver {
     fun test7() {
         parse("recampo.tiny")
     }
+
+    @Test
+    fun test8() {
+        parse("errotipos.tiny")
+    }
 }
